@@ -23,9 +23,9 @@ into one dollar score:
 
 ## How it fits together
 
-Churn Model ─► churn_order_level_artifact.joblib ─┐
-                                                  ├─► Full build PLTV model ─► pltv_scores.csv
-AOV Model ─► expected_aov_by_customer.csv   ──────┘
+Churn Model ─► churn_order_level_artifact.joblib (output = model artifact)
+AOV Model ─► expected_aov_by_customer.csv (output = expected AOV of customer base)
+Full build PLTV model ─► pltv_scores.csv
 
 ## Getting started
 
