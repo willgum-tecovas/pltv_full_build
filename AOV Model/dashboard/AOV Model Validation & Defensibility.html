@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>AOV Model Validation &amp; Defensibility</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js" integrity="sha384-iU8HYtnGQ8Cy4zl7gbNMOhsDTTKX02BTXptVP/vqAWIaTfM7isw76iyZCsjL2eVi" crossorigin="anonymous"></script>
+<style>
+  :root {
+    color-scheme: light;
+    --brand:#A94619; --green:#3A4B38; --slate:#69757C; --tan:#E9A877; --pine:#B6B28B;
+    --surface:#FCF9F4; --card:#FFFFFF; --alt:#F0ECE7;
+    --ink:#191A19; --ink-muted:#656563; --border:#E1E1DD;
+    --font-serif:"borax-variable",Georgia,"Times New Roman",serif;
+    --font-sans:"mundial",Verdana,system-ui,sans-serif;
+    --font-alt:"lorimer-no-2",Tahoma,sans-serif;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--surface); color:var(--ink); font-family:var(--font-sans); line-height:1.55; -webkit-font-smoothing:antialiased; }
+  .wrap { max-width:940px; margin:0 auto; padding:40px 28px 64px; }
+
+  header { border-bottom:1px solid var(--border); padding-bottom:26px; margin-bottom:8px; }
+  .eyebrow { font-family:var(--font-alt); text-transform:uppercase; letter-spacing:.14em; font-size:12px; font-weight:700; color:var(--brand); margin:0 0 10px; }
+  h1 { font-family:var(--font-serif); font-weight:600; font-size:34px; line-height:1.15; margin:0 0 12px; letter-spacing:-.01em; }
+  .sub { color:var(--ink-muted); font-size:15.5px; max-width:70ch; margin:0; }
+  .sub b { color:var(--ink); font-weight:600; }
+
+  .kpis { display:flex; flex-wrap:wrap; gap:14px; margin-top:24px; }
+  .kpi { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:14px 18px; min-width:150px; flex:1; }
+  .kpi .num { font-family:var(--font-serif); font-size:25px; font-weight:600; color:var(--ink); }
+  .kpi .lbl { font-size:12px; color:var(--ink-muted); margin-top:3px; }
+
+  .sec-label { font-family:var(--font-alt); text-transform:uppercase; letter-spacing:.12em; font-size:11px; font-weight:700; color:var(--brand); margin:42px 0 12px; }
+  .card { background:var(--card); border:1px solid var(--border); border-radius:16px; padding:26px 26px 22px; margin-bottom:26px; box-shadow:0 1px 2px rgba(25,26,25,.04); }
+  h2 { font-family:var(--font-serif); font-weight:600; font-size:22px; margin:0 0 6px; }
+  .caption { color:var(--ink-muted); font-size:14.5px; margin:0 0 18px; max-width:78ch; }
+  .caption b { color:var(--ink); font-weight:600; }
+  .chart-box { position:relative; height:360px; }
+  .chart-box.tall { height:440px; }
+  .chart-box.stack { height:150px; }
+
+  .legend { display:flex; gap:20px; margin:0 0 12px; font-size:13px; color:var(--ink-muted); }
+  .legend span { display:inline-flex; align-items:center; gap:7px; }
+  .swatch { width:12px; height:12px; border-radius:3px; display:inline-block; }
+
+  .stat-row { display:flex; flex-wrap:wrap; gap:26px; margin:18px 0 4px; }
+  .stat .v { font-family:var(--font-serif); font-size:23px; font-weight:600; color:var(--ink); }
+  .stat .l { font-size:12px; color:var(--ink-muted); max-width:22ch; }
+
+  .note { background:var(--alt); border-left:3px solid var(--brand); border-radius:8px; padding:12px 16px; font-size:13.5px; color:var(--ink); margin:16px 0 2px; }
+  .card a, .note a { color:var(--brand); text-decoration:underline; text-underline-offset:2px; }
+  .note ul { margin:8px 0 0; padding-left:20px; }
+  .note li { margin:6px 0; }
+
+  /* ---- math kit (copied from the term-by-term explainer; no external libs) ---- */
+  h3 { font-size:16px; font-weight:600; margin:24px 0 4px; color:var(--ink); }
+  .eq { background:var(--card); border:1px solid var(--border); border-left:4px solid var(--green); border-radius:10px; padding:14px 18px; margin:14px 0; overflow-x:auto; }
+  .math { font-family:"Cambria Math","Latin Modern Math","Times New Roman",Georgia,serif; font-size:20px; line-height:2.15; text-align:center; white-space:nowrap; }
+  .math .v { font-style:italic; }
+  .math .op { font-style:normal; }
+  .frac { display:inline-flex; flex-direction:column; vertical-align:middle; text-align:center; margin:0 .3em; }
+  .frac>span { padding:0 .45em; }
+  .frac .n { border-bottom:1.6px solid currentColor; }
+  .sum { display:inline-flex; flex-direction:column; align-items:center; vertical-align:middle; margin:0 .18em; line-height:1; }
+  .sum .s { font-size:1.5em; }
+  .sum .lim { font-size:.5em; color:var(--ink-muted); }
+  .hl { border-bottom:2px solid var(--tan); padding-bottom:1px; }
+  .eqnote { font-size:14px; color:var(--ink-muted); text-align:center; margin-top:6px; }
+
+  /* ---- AOV playground ---- */
+  .pg-const { display:flex; flex-wrap:wrap; gap:14px 22px; font-size:12.5px; color:var(--ink-muted); background:var(--alt); border-radius:10px; padding:12px 16px; margin:6px 0 20px; }
+  .pg-const b { color:var(--ink); font-family:"Cambria Math",Georgia,serif; font-style:italic; }
+  .pg-slider { margin:14px 0; }
+  .pg-slider label { font-size:13.5px; font-weight:600; display:flex; align-items:baseline; gap:8px; margin-bottom:5px; }
+  .pg-slider .sv { color:var(--brand); font-family:var(--font-serif); font-weight:600; }
+  .pg-slider input[type=range] { width:100%; accent-color:var(--brand); }
+  .pg-slider .sub { font-size:12px; color:var(--ink-muted); margin-top:2px; }
+  .pg-out { background:var(--green); color:#fff; border-radius:12px; padding:16px 20px; margin:20px 0; display:flex; align-items:center; gap:16px; flex-wrap:wrap; }
+  .pg-out .big { font-family:var(--font-serif); font-size:34px; font-weight:600; line-height:1; }
+  .pg-out .sub { font-size:12.5px; opacity:.9; }
+  .pg-out .state { margin-left:auto; text-align:right; font-size:12.5px; opacity:.92; line-height:1.7; }
+  .pg-out .state b { font-weight:700; }
+  .pg-tblnote { font-size:12.5px; color:var(--ink-muted); margin:4px 0 10px; }
+  table.pg { width:100%; border-collapse:collapse; font-size:13.5px; }
+  table.pg th { text-align:left; color:var(--ink-muted); font-weight:600; font-size:11.5px; padding:6px 8px; border-bottom:1px solid var(--border); }
+  table.pg td { padding:9px 8px; border-bottom:1px solid var(--border); vertical-align:middle; }
+  table.pg .cell-name { font-weight:600; }
+  table.pg .cell-sub { font-size:11.5px; color:var(--ink-muted); }
+  .pg-right { text-align:right; font-variant-numeric:tabular-nums; }
+  .pg-right .d { font-weight:600; }
+  .pg-right .l { font-size:11.5px; color:var(--ink-muted); }
+  .stepper { display:inline-flex; align-items:center; border:1px solid var(--border); border-radius:8px; overflow:hidden; }
+  .stepper button { border:0; background:var(--alt); color:var(--ink); width:30px; height:30px; font-size:17px; cursor:pointer; line-height:1; }
+  .stepper button:hover { background:var(--brand); color:#fff; }
+  .stepper .cnt { min-width:34px; text-align:center; font-variant-numeric:tabular-nums; font-weight:700; }
+
+  footer { color:var(--ink-muted); font-size:12.5px; border-top:1px solid var(--border); padding-top:18px; margin-top:6px; }
+  footer .flag { color:var(--brand); font-weight:600; }
+  code { background:var(--alt); padding:1px 5px; border-radius:4px; font-size:12.5px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <p class="eyebrow">Customer Lifetime Value &middot; PLTV input</p>
+    <h1>AOV Model Validation &amp; Defensibility</h1>
+    <p class="sub">Order value swings roughly <b>6.5&times;</b> depending on what a customer buys. The whole job of this model is to <b>pin down that variance</b> &mdash; separating what's structural (merchandise department, exotic leather) from true order-to-order noise &mdash; so every customer gets a defensible average order value to feed PLTV.</p>
+    <div class="kpis">
+      <div class="kpi"><div class="num">6.5&times;</div><div class="lbl">Range in order value across cells</div></div>
+      <div class="kpi"><div class="num">77%</div><div class="lbl">of within-customer variance is department + exotic</div></div>
+      <div class="kpi"><div class="num">0.986</div><div class="lbl">Out-of-sample calibration (pred &divide; actual)</div></div>
+      <div class="kpi"><div class="num">3+ orders</div><div class="lbl">EB model beats both baselines (it ties the population mean at 1&ndash;2 orders)</div></div>
+    </div>
+  </header>
+
+  <div class="note" style="border-left-color:var(--green); font-size:14.5px; margin:22px 0 4px;">
+    <b>In plain terms.</b> We estimate each customer's <b>typical order size</b>, to multiply by their expected future orders for lifetime value. Two things set it: <b>what they buy</b> &mdash; an exotic-boot order is worth far more than an accessory order &mdash; and <b>how they shop</b> &mdash; some people run a little above or below average for the same items. For customers we've barely seen, we lean on what similar customers do and let their own history take over as they order more. Everything below shows how, and proves it holds up out-of-sample.
+  </div>
+
+  <p class="sec-label">Preface — why this approach</p>
+
+  <section class="card">
+    <h2>Why an empirical-Bayes hierarchical model?</h2>
+    <p class="caption">The goal is one expected AOV per customer that we multiply by projected orders for dollar CLV. Three routes were on the table; here's why we landed on this one.</p>
+
+    <h3>Plain machine learning</h3>
+    <p class="caption">A supervised regression carries <b>no notion of population/prior behavior</b>, and for the ~68% one-and-done and short-history customers there's almost no per-customer signal to learn from. And there's a <b>hard limit on how well any model can do here</b>: a single order is mostly luck &mdash; the same customer's spend swings widely from one purchase to the next &mdash; so for someone with only one or two past orders, even a flawless model can pin down just a small slice of what they'll spend next. The rest is irreducible noise, not missing signal. Machine learning can't beat that limit; it just hides the uncertainty, where this model instead leans on what similar customers do and shrinks toward it.</p>
+
+    <h3>Gamma-Gamma (the standard CLV spend model)</h3>
+    <p class="caption">The Fader&ndash;Hardie Gamma-Gamma model is the usual monetary-value component in customer-base analysis, but its <b>hyperparameters didn't fit our data</b>. It assumes spend is gamma-distributed around a gamma-distributed customer mean, independent of purchase frequency and sharing one shape parameter &mdash; assumptions our order-value distribution violates (heavy department and exotic structure), so the fit didn't hold.</p>
+
+    <h3>What we built</h3>
+    <p class="caption">An <b>empirical-Bayes hierarchical (credibility)</b> model that does two things the alternatives don't. First, it <b>shrinks each customer toward a population prior by exactly how much we've observed</b> &mdash; thin histories lean on the population, loyal customers on their own data &mdash; which is the provably most-accurate move with noisy short histories. Second, it <b>explicitly prices the features that drive order value</b>, merchandise department and exotic leather, at the order level, separating "the premium for what they bought" from "who they are." That feature-aware pricing is the piece we specifically wanted, and neither ML nor Gamma-Gamma delivered it.</p>
+
+    <div class="note">
+      <b>Further reading</b>
+      <ul>
+        <li><a href="https://www.routledge.com/Statistical-Rethinking-A-Bayesian-Course-with-Examples-in-R-and-STAN/McElreath/p/book/9780367139919" target="_blank" rel="noopener">McElreath (2020), <i>Statistical Rethinking</i> (2nd ed.)</a> &mdash; the accessible, applied intro to multilevel / partial-pooling models: the same shrink-toward-the-group idea this model uses, with worked intuition.</li>
+        <li><a href="https://efron.ckirby.su.domains/other/CASI_Chap7_Nov2014.pdf" target="_blank" rel="noopener">Efron &amp; Hastie (2016), <i>Computer Age Statistical Inference</i>, Ch.&nbsp;7</a> &mdash; James&ndash;Stein estimation and empirical Bayes: why shrinking noisy individual estimates toward the group is provably more accurate.</li>
+        <li><a href="https://openacttexts.github.io/Loss-Data-Analytics/ChapCredibility.html" target="_blank" rel="noopener">Loss Data Analytics, Credibility chapter (open actuarial text)</a> &mdash; the actuarial framework behind the credibility weight <code>w = n/(n+K)</code>.</li>
+        <li><a href="https://www.brucehardie.com/notes/025/gamma_gamma.pdf" target="_blank" rel="noopener">Fader &amp; Hardie (2013), &ldquo;The Gamma-Gamma Model of Monetary Value&rdquo;</a> &mdash; the standard CLV spend model we compared against.</li>
+      </ul>
+    </div>
+  </section>
+
+  <p class="sec-label">The problem — variance</p>
+
+  <section class="card">
+    <h2>1 &middot; One &ldquo;average order value&rdquo; would be wrong for almost everyone</h2>
+    <p class="caption">Typical order value by merchandise department and leather (exact per-cell values). It runs from about <b>$89</b> (a standard accessory) to <b>$576</b> (an exotic men's boot). Two levers drive the spread: <b>department</b> &mdash; standard boots are ~3.9&times; an accessory &mdash; and <b>exotic leather</b>, whose premium <b>varies by department</b>: ~1.55&times; on women's boots, ~1.8&times; on men's boots, and ~3&times; on an accessory day where the exotic item dominates a cheap basket. Hover any bar for its share of orders. One blended AOV would ignore all of this.</p>
+    <div class="legend">
+      <span><span class="swatch" style="background:#3A4B38"></span>Standard leather</span>
+      <span><span class="swatch" style="background:#A94619"></span>Exotic leather</span>
+    </div>
+    <div class="chart-box tall"><canvas id="ladderChart"></canvas></div>
+    <div class="stat-row">
+      <div class="stat"><div class="v">3.9&times;</div><div class="l">department spread (accessory &rarr; women's boot)</div></div>
+      <div class="stat"><div class="v">1.55&ndash;3.0&times;</div><div class="l">exotic premium (varies by department)</div></div>
+      <div class="stat"><div class="v">6.5&times;</div><div class="l">full range, cheapest to priciest cell</div></div>
+    </div>
+  </section>
+
+  <p class="sec-label">Why it's solvable</p>
+
+  <section class="card">
+    <h2>2 &middot; Most &ldquo;customer noise&rdquo; is really department + exotic</h2>
+    <p class="caption">Within a customer, the spend that looks erratic is mostly just <b>basket mix</b> &mdash; an accessory one trip, boots the next. An order-weighted decomposition pulls that structure out of the noise: <b>77%</b> of within-customer variance is department + exotic, leaving just <b>23%</b> as genuine order-to-order noise (the clean within-cell <code>&sigma; = 0.53</code> in log terms). That small, clean residual is exactly what lets a customer's own orders carry real weight instead of being drowned out.</p>
+    <div class="legend">
+      <span><span class="swatch" style="background:#B6B28B"></span>Structure &mdash; department &amp; exotic (explained)</span>
+      <span><span class="swatch" style="background:#A94619"></span>True order-to-order noise (residual)</span>
+    </div>
+    <div class="chart-box stack"><canvas id="varChart"></canvas></div>
+    <div class="note">
+      Smaller, cleaner noise means the credibility weight <code>w = n/(n+K)</code> rises. A <b>5-order customer's prediction leans ~52% on their own history</b> &mdash; versus ~20% if department and exotic had been left in the noise. That is the difference between a generic segment average and a genuinely customer-level number. <span style="opacity:.8">(Illustrative: holds <code>&tau;</code> fixed.)</span>
+    </div>
+    <div class="stat-row">
+      <div class="stat"><div class="v">1.11 &rarr; 0.53</div><div class="l">within-customer &sigma; &rarr; clean within-cell &sigma; (log)</div></div>
+      <div class="stat"><div class="v">23%</div><div class="l">of within-customer variance is true noise</div></div>
+      <div class="stat"><div class="v">~20% &rarr; ~52%</div><div class="l">weight on a 5-order customer's own data (illustrative)</div></div>
+    </div>
+  </section>
+
+  <p class="sec-label">How the number is built — the math</p>
+
+  <section class="card">
+    <h2>3 &middot; From structure to a single dollar figure</h2>
+    <p class="caption">Three pieces turn the variance above into one AOV per customer: how much to trust a customer's own orders (the credibility weight), how to regularize a thin purchase mix (mix-shrinkage), and how they assemble into expected AOV.</p>
+
+    <h3>Credibility weight — the shrunk baseline <span class="math" style="font-size:16px"><span class="v">&theta;&#770;</span><sub class="v">c</sub></span></h3>
+    <p class="caption">Combine two Normal sources &mdash; the customer's own orders (noisy, spread <span class="math" style="font-size:15px"><span class="v">&sigma;</span></span>) and their group (spread <span class="math" style="font-size:15px"><span class="v">&tau;</span></span>) &mdash; weighting each by its precision. <span class="math" style="font-size:15px"><span class="v">K</span> = <span class="v">&sigma;</span><sup>2</sup>/<span class="v">&tau;</span><sup>2</sup></span> is how many orders it takes for a customer's own data to count as much as the group; it isn't chosen, it falls out of the two spreads.</p>
+    <div class="eq"><div class="math">
+    <span class="v">K</span> = <span class="frac"><span class="n"><span class="v">&sigma;</span><sup>2</sup></span><span class="d"><span class="v">&tau;</span><sup>2</sup></span></span>
+    &nbsp;&nbsp;&nbsp; <span class="v">w</span><sub class="v">c</sub> = <span class="frac"><span class="n"><span class="v">n</span><sub class="v">c</sub></span><span class="d"><span class="v">n</span><sub class="v">c</sub> + <span class="v">K</span></span></span>
+    &nbsp;&nbsp;&nbsp;
+    <span class="v">&theta;&#770;</span><sub class="v">c</sub> = <span class="hl"><span class="v">w</span><sub class="v">c</sub> <span class="v">&theta;</span><sub class="v">c</sub><sup class="op">raw</sup></span> + <span class="hl">(1 &minus; <span class="v">w</span><sub class="v">c</sub>)(<span class="v">&mu;</span>+<span class="v">X&beta;</span>)</span>
+    </div><div class="eqnote">the shrunk baseline = (weight on the customer) &times; their data + (weight on the group) &times; the prior</div></div>
+
+    <div class="note">
+      <b>What the baseline <span class="math" style="font-size:14px"><span class="v">&theta;</span></span> means &mdash; and why baselines look alike.</b>
+      It is <b>not</b> a customer's raw average order value. It's that average with <b>&ldquo;what they bought&rdquo; priced out</b>: for each order we first subtract that order's department/exotic premium (<span class="math" style="font-size:13px"><span class="v">&gamma;</span></span>), then average. So a <b>$550 exotic-boot</b> buyer and a <b>$120 accessory</b> buyer can share the <b>same baseline</b> &mdash; the model reads them as &ldquo;equally high spenders for what they buy,&rdquo; and prices the boot-vs-accessory gap separately through <span class="math" style="font-size:13px"><span class="v">&gamma;</span></span>. That's exactly why baselines come out far more alike than raw order values (which span ~7&times;): the big department-driven differences are removed, leaving only the genuine person-to-person spread <span class="math" style="font-size:13px"><span class="v">&tau;</span></span> (&asymp; &plusmn;27% at one standard deviation). Department and exotic aren't ignored &mdash; paying for them here <em>and</em> in <span class="math" style="font-size:13px"><span class="v">&gamma;</span></span> would double-count, so they live only at the order level.
+    </div>
+
+    <h3>Mix-shrinkage — the shrunk purchase mix <span class="math" style="font-size:16px"><span class="v">p&#770;</span><sub class="v">c</sub></span></h3>
+    <p class="caption">A one-order customer's observed mix is &ldquo;100% whatever they bought once,&rdquo; which is overconfident. Credit them with <span class="math" style="font-size:15px"><span class="v">M</span></span> pseudo-orders spread like the population, so a thin history can't look too certain (a cell = one department &times; exotic-or-not).</p>
+    <div class="eq"><div class="math">
+    <span class="v">p&#770;</span><sub class="v">c</sub>(<span class="op">cell</span>) =
+    <span class="frac"><span class="n"><span class="v">n</span><sub class="v">c</sub>(<span class="op">cell</span>) + <span class="v">M</span> · <span class="v">p</span><sub class="op">pop</sub>(<span class="op">cell</span>)</span><span class="d"><span class="v">n</span><sub class="v">c</sub> + <span class="v">M</span></span></span>
+    </div><div class="eqnote">their orders in the cell, plus M pseudo-orders' worth of the population, over their total orders plus M</div></div>
+
+    <h3>Expected AOV — the assembled formula</h3>
+    <p class="caption">The dollar value of an order in each cell (baseline &times; the cell's premium &times; the mean-correction), averaged over the shrunk mix &mdash; which, because the mix is linear, collapses to one pass over the data.</p>
+    <div class="eq"><div class="math">
+    <span class="v">E</span>[<span class="op">AOV</span><sub class="v">c</sub>] =
+    <span class="sum"><span class="s">&sum;</span><span class="lim">cells</span></span>
+    <span class="v">p&#770;</span><sub class="v">c</sub>(<span class="op">cell</span>) ·
+    <span class="v">e</span><sup><span class="v">&theta;&#770;</span><sub class="v">c</sub> + <span class="v">&gamma;</span><sub class="op">cell</sub> + <span class="v">&sigma;</span><sup>2</sup>/2</sup>
+    </div></div>
+    <div class="eq"><div class="math">
+    = <span class="frac"><span class="n"><span class="v">e</span><sup><span class="v">&theta;&#770;</span><sub class="v">c</sub></sup></span><span class="d"><span class="v">n</span><sub class="v">c</sub> + <span class="v">M</span></span></span>
+    <span class="op">(</span>
+    <span class="sum"><span class="s">&sum;</span><span class="lim">their cells</span></span>
+    <span class="v">n</span><sub class="v">c</sub>(<span class="op">cell</span>) <span class="v">A</span><sub class="op">cell</sub>
+    &nbsp;+&nbsp; <span class="v">M</span> <span class="v">A&#772;</span><sub class="op">pop</sub>
+    <span class="op">)</span>,
+    &nbsp;&nbsp; <span class="v">A</span><sub class="op">cell</sub> = <span class="v">e</span><sup><span class="v">&gamma;</span><sub class="op">cell</sub> + <span class="v">&sigma;</span><sup>2</sup>/2</sup>
+    </div><div class="eqnote">the <span class="math" style="font-size:13px">+<span class="v">&sigma;</span><sup>2</sup>/2</span> is the median&rarr;mean correction; in practice an empirical smearing factor replaces it (notebook &sect;4)</div></div>
+  </section>
+
+  <p class="sec-label">Try it — interactive</p>
+
+  <section class="card">
+    <h2>4 &middot; Customer AOV playground</h2>
+    <p class="caption">Build a customer order by order and watch expected AOV update live through the exact formulas above. Add orders to any cell (+/&minus;), set the customer's raw baseline <span class="math" style="font-size:14px"><span class="v">&theta;</span><sub class="v">c</sub></span>, and set the pseudo-orders <span class="math" style="font-size:14px"><span class="v">M</span></span>. Everything else is held at the fitted values. Dollars are primary; the log-scale value is in subtext throughout.</p>
+
+    <div class="pg-const">
+      <span><b>&sigma;&sup2;</b> = 0.281 &mdash; within-cell noise (&sigma; = 0.53)</span>
+      <span><b>&tau;&sup2;</b> = 0.067 &mdash; between-customer variance (&tau; = 0.26)</span>
+      <span><b>K</b> = &sigma;&sup2;/&tau;&sup2; = 4.2 &mdash; prior strength, in orders</span>
+      <span><b>&mu;+X&beta;</b> = 5.41 &mdash; prior baseline (log; &asymp; $224 at the average order)</span>
+      <span><b>&sigma;&sup2;/2</b> = 0.14 &mdash; median&rarr;mean correction</span>
+    </div>
+
+    <div class="pg-slider">
+      <label>Customer raw baseline <span class="math" style="font-size:14px"><span class="v">&theta;</span><sub class="v">c</sub></span> <span class="sv" id="pgThetaLab"></span></label>
+      <input type="range" id="pgTheta" min="4.4" max="6.6" step="0.01" value="5.41">
+      <div class="sub">their own department-adjusted baseline on the log scale, before shrinkage (centered at the average order)</div>
+    </div>
+    <div class="pg-slider">
+      <label>Mix pseudo-orders <span class="math" style="font-size:14px"><span class="v">M</span></span> <span class="sv" id="pgMLab"></span></label>
+      <input type="range" id="pgM" min="0" max="20" step="1" value="5">
+      <div class="sub">how hard a thin purchase mix is pulled toward the population mix</div>
+    </div>
+
+    <div class="pg-out">
+      <div><div class="big" id="pgAov">$0</div><div class="sub" id="pgAovLog"></div></div>
+      <div class="state" id="pgState"></div>
+    </div>
+
+    <p class="pg-tblnote">Orders by cell &mdash; each cell's <span class="math" style="font-size:13px"><span class="v">&gamma;</span><sub class="op">cell</sub></span> and population share <span class="math" style="font-size:13px"><span class="v">p</span><sub class="op">pop</sub></span> are held constant (shares illustrative; swap in your <code>VIZ_LADDER</code> order_share). Steppers start at 0.</p>
+    <table class="pg">
+      <thead><tr><th>Cell &nbsp;·&nbsp; &gamma;<sub>cell</sub> &nbsp;·&nbsp; p<sub>pop</sub></th><th style="text-align:center">orders n<sub>c</sub>(cell)</th><th class="pg-right">shrunk mix p&#770; &nbsp;·&nbsp; $/order</th></tr></thead>
+      <tbody id="pgRows"></tbody>
+    </table>
+  </section>
+
+  <p class="sec-label">The payoff — defensibility</p>
+
+  <section class="card">
+    <h2>5 &middot; Out-of-sample accuracy vs. the baselines</h2>
+    <p class="caption">Median absolute % error against realized AOV in a temporal holdout, by number of training orders. The <b>EB model</b> beats the customer's own raw mean everywhere, and beats the flat population average from <b>3 orders on</b>. At 1&ndash;2 orders it essentially <b>ties</b> the population mean (35.6% vs 35.0%): there's almost no per-customer signal that thin, so the model correctly falls back toward the population rather than chasing noise. Lower is better.</p>
+    <div class="chart-box"><canvas id="errChart"></canvas></div>
+  </section>
+
+  <section class="card">
+    <h2>6 &middot; And it's unbiased in aggregate</h2>
+    <p class="caption">Customers binned by predicted AOV; each point is a bin's mean prediction versus its mean realized value. On the dashed line is perfect calibration. The bins track it closely and sit fractionally below &mdash; a slight, deliberate under-prediction (aggregate ratio 0.986). Accurate per bin and unbiased in total is exactly what PLTV needs when these AOVs are multiplied by projected orders and summed.</p>
+    <div class="chart-box"><canvas id="calChart"></canvas></div>
+  </section>
+
+  <footer>
+    <b>Defensible for PLTV:</b> department and exotic explain the bulk of order-value variance, the leftover noise is small and clean, and out-of-sample the per-customer prediction beats the population mean from 3 orders on (and ties it below that) while staying calibrated in aggregate. &nbsp;Source: <code>eb_aov_order_level.ipynb</code>. Category dollars are exact per-cell averages from the fitted model; binned-calibration points are read from the holdout plot.
+  </footer>
+</div>
+
+<script>
+// ===========================================================================
+// DATA — from notebook output. Edit to update.
+// ===========================================================================
+// Section 1 · value ladder = exact per-cell typical order value (VIZ_LADDER export)
+const LADDER = [
+  { label:"Accessories",       exotic:0, usd:89,  share:0.1523 },
+  { label:"Women's Apparel",   exotic:0, usd:120, share:0.0235 },
+  { label:"Men's Apparel",     exotic:0, usd:131, share:0.0891 },
+  { label:"Accessories",       exotic:1, usd:267, share:0.0318 },
+  { label:"Men's Footwear",    exotic:0, usd:314, share:0.3027 },
+  { label:"Women's Footwear",  exotic:0, usd:348, share:0.2650 },
+  { label:"Women's Footwear",  exotic:1, usd:539, share:0.0174 },
+  { label:"Men's Footwear",    exotic:1, usd:576, share:0.1085 }
+];
+
+// Section 2 · within-customer variance decomposition (order-weighted shares)
+const VAR = { structure: 0.774, residual: 0.226 };   // rigorous order-weighted split (sums to 1)
+
+// Section 3 · holdout error by training-order tier (median abs % error)
+const TIER = {
+  labels: ["1","2","3","4-5","6-10","11+"],
+  popMean:  [35.0,37.2,39.4,39.7,39.4,40.0],
+  rawMean:  [47.9,44.9,43.0,40.6,38.2,31.4],
+  model:    [35.6,37.3,38.1,37.8,36.6,30.0]
+};
+
+// Section 4 · binned calibration (order_id grain) — transcribed from plot
+const CAL = [ {x:238,y:228}, {x:277,y:277}, {x:297,y:294}, {x:312,y:310}, {x:354,y:358} ];
+
+const C = { brand:"#A94619", green:"#3A4B38", slate:"#69757C", tan:"#E9A877", pine:"#B6B28B", border:"#E1E1DD", ink:"#191A19", muted:"#656563" };
+Chart.defaults.font.family = '"mundial",Verdana,system-ui,sans-serif';
+Chart.defaults.color = C.muted;
+const usd = v => "$" + Math.round(v).toLocaleString();
+
+// --- 1 · value ladder ------------------------------------------------------
+new Chart(document.getElementById("ladderChart"), {
+  type: "bar",
+  data: {
+    labels: LADDER.map(d => d.label + (d.exotic ? "  ·  exotic" : "")),
+    datasets: [{
+      data: LADDER.map(d => d.usd),
+      backgroundColor: LADDER.map(d => d.exotic ? C.brand : C.green),
+      borderRadius: 3, barPercentage: 0.82
+    }]
+  },
+  options: {
+    indexAxis: "y", responsive: true, maintainAspectRatio: false,
+    scales: {
+      x: { title:{display:true,text:"Typical order value ($)",color:C.muted}, grid:{color:C.border}, ticks:{callback:usd}, beginAtZero:true },
+      y: { grid:{display:false}, ticks:{font:{size:12}} }
+    },
+    plugins: { legend:{display:false}, tooltip:{callbacks:{label:c=>usd(c.parsed.x)+" per order  ·  "+(LADDER[c.dataIndex].share*100).toFixed(1)+"% of orders"}} }
+  }
+});
+
+// --- 2 · variance decomposition (stacked horizontal) -----------------------
+const total = VAR.structure + VAR.residual;
+new Chart(document.getElementById("varChart"), {
+  type: "bar",
+  data: {
+    labels: ["Within-customer variance"],
+    datasets: [
+      { label:"Structure (department & exotic)", data:[VAR.structure], backgroundColor:C.pine, borderRadius:3 },
+      { label:"True order-to-order noise", data:[VAR.residual], backgroundColor:C.brand, borderRadius:3 }
+    ]
+  },
+  options: {
+    indexAxis: "y", responsive: true, maintainAspectRatio: false,
+    scales: {
+      x: { stacked:true, max: total, grid:{color:C.border}, ticks:{callback:v=>Math.round(v*100)+"%"}, title:{display:true,text:"share of within-customer variance",color:C.muted} },
+      y: { stacked:true, grid:{display:false}, ticks:{display:false} }
+    },
+    plugins: {
+      legend:{display:false},
+      tooltip:{ callbacks:{ label:c=>`${c.dataset.label}: ${Math.round(100*c.parsed.x/total)}%` } }
+    }
+  }
+});
+
+// --- 3 · error by tier -----------------------------------------------------
+new Chart(document.getElementById("errChart"), {
+  type: "line",
+  data: { labels: TIER.labels, datasets: [
+    { label:"Population mean", data:TIER.popMean, borderColor:C.slate, backgroundColor:C.slate, borderWidth:2, tension:.25, pointRadius:3, pointHoverRadius:5, borderDash:[5,4] },
+    { label:"Raw customer mean", data:TIER.rawMean, borderColor:C.green, backgroundColor:C.green, borderWidth:2, tension:.25, pointRadius:3, pointHoverRadius:5, borderDash:[5,4] },
+    { label:"EB model", data:TIER.model, borderColor:C.brand, backgroundColor:C.brand, borderWidth:3.5, tension:.25, pointRadius:4.5, pointHoverRadius:6 } ] },
+  options: { responsive:true, maintainAspectRatio:false, interaction:{mode:"index",intersect:false},
+    scales:{ y:{ title:{display:true,text:"Median abs % error",color:C.muted}, grid:{color:C.border}, ticks:{callback:v=>v+"%"}, suggestedMin:28, suggestedMax:52 },
+             x:{ title:{display:true,text:"Training orders (n)",color:C.muted}, grid:{display:false} } },
+    plugins:{ legend:{position:"top",align:"end",labels:{usePointStyle:true,pointStyleWidth:10,boxHeight:7,font:{size:13},color:C.ink}},
+              tooltip:{callbacks:{label:c=>`${c.dataset.label}: ${c.parsed.y.toFixed(1)}%`}} } }
+});
+
+// --- 4 · binned calibration ------------------------------------------------
+const cLo = Math.min(...CAL.map(p=>Math.min(p.x,p.y)))-8, cHi = Math.max(...CAL.map(p=>Math.max(p.x,p.y)))+8;
+new Chart(document.getElementById("calChart"), {
+  type: "scatter",
+  data: { datasets:[
+    { label:"Perfect calibration", data:[{x:cLo,y:cLo},{x:cHi,y:cHi}], type:"line", borderColor:C.muted, borderWidth:1.5, borderDash:[6,5], pointRadius:0, order:2 },
+    { label:"Prediction bins", data:CAL, borderColor:C.brand, backgroundColor:C.brand, showLine:true, borderWidth:3, pointRadius:6, pointHoverRadius:8, order:1 } ] },
+  options: { responsive:true, maintainAspectRatio:false,
+    scales:{ x:{title:{display:true,text:"Realized (bin mean, $)",color:C.muted}, grid:{color:C.border}, min:cLo, max:cHi, ticks:{callback:usd}},
+             y:{title:{display:true,text:"Predicted (bin mean, $)",color:C.muted}, grid:{color:C.border}, min:cLo, max:cHi, ticks:{callback:usd}} },
+    plugins:{ legend:{position:"top",align:"end",labels:{usePointStyle:true,pointStyleWidth:10,boxHeight:7,font:{size:13},color:C.ink}},
+              tooltip:{callbacks:{label:c=>`Realized ${usd(c.parsed.x)}, Predicted ${usd(c.parsed.y)}`}} } }
+});
+</script>
+<script>
+// ===========================================================================
+// Customer AOV playground — live evaluation of the Section 3 formulas.
+// Constants held fixed; theta_c, M, and per-cell order counts are interactive.
+// ===========================================================================
+(function(){
+  // one cell per (department, exotic): gamma = fitted log premium vs the AVERAGE
+  // order (grand-mean centered: 0 = average, <0 cheaper, >0 pricier). "· exotic"
+  // = a day whose primary dept is this that also included an exotic item.
+  // ppop = order_share (VIZ_LADDER), renormalized over the cells shown here.
+  const CELLS = [
+    { name:"Accessories",               gamma:-1.0581, ppop:0.1538 },
+    { name:"Women's Apparel",           gamma:-0.7632, ppop:0.0237 },
+    { name:"Men's Apparel",             gamma:-0.6782, ppop:0.0900 },
+    { name:"Accessories · exotic",      gamma: 0.0350, ppop:0.0321 },
+    { name:"Men's Footwear",            gamma: 0.1999, ppop:0.3057 },
+    { name:"Women's Footwear",          gamma: 0.3007, ppop:0.2676 },
+    { name:"Women's Footwear · exotic", gamma: 0.7382, ppop:0.0176 },
+    { name:"Men's Footwear · exotic",   gamma: 0.8052, ppop:0.1096 }
+  ];
+  const SIG2 = 0.281, TAU2 = 0.067, MUX = 5.41, HALF = SIG2 / 2;
+  const K = SIG2 / TAU2;                       // prior strength (orders)
+  const A = CELLS.map(c => Math.exp(c.gamma + HALF));            // per-cell $ multiplier A_cell
+  const AbarPop = CELLS.reduce((s, c, i) => s + c.ppop * A[i], 0); // population-avg multiplier
+
+  const counts = CELLS.map(() => 0);
+  let theta = 5.41, M = 5;
+  const $ = id => document.getElementById(id);
+  const usd = v => "$" + Math.round(v).toLocaleString();
+
+  // build one row per cell
+  const rowsEl = $("pgRows");
+  CELLS.forEach((c, i) => {
+    const tr = document.createElement("tr");
+    tr.innerHTML =
+      '<td><span class="cell-name">' + c.name + '</span><br>' +
+        '<span class="cell-sub">&gamma; = ' + c.gamma.toFixed(3) + ' &middot; &times;' + Math.exp(c.gamma).toFixed(2) +
+        ' &middot; p<sub>pop</sub> ' + Math.round(c.ppop * 100) + '%</span></td>' +
+      '<td style="text-align:center"><span class="stepper">' +
+        '<button data-i="' + i + '" data-d="-1">&minus;</button>' +
+        '<span class="cnt" id="pgc' + i + '">0</span>' +
+        '<button data-i="' + i + '" data-d="1">+</button></span></td>' +
+      '<td class="pg-right"><span class="d" id="pgp' + i + '"></span><br><span class="l" id="pgd' + i + '"></span></td>';
+    rowsEl.appendChild(tr);
+  });
+  rowsEl.querySelectorAll("button").forEach(b => b.addEventListener("click", () => {
+    const i = +b.dataset.i, d = +b.dataset.d;
+    counts[i] = Math.max(0, counts[i] + d);
+    $("pgc" + i).textContent = counts[i];
+    recompute();
+  }));
+  $("pgTheta").addEventListener("input", e => { theta = +e.target.value; recompute(); });
+  $("pgM").addEventListener("input", e => { M = +e.target.value; recompute(); });
+
+  function recompute(){
+    const nc = counts.reduce((a, b) => a + b, 0);           // total orders
+    const w = nc / (nc + K);                                // credibility weight
+    const thetaHat = w * theta + (1 - w) * MUX;             // shrunk baseline
+    const obsSum = counts.reduce((s, n, i) => s + n * A[i], 0);
+    const denom = nc + M;
+
+    $("pgThetaLab").textContent = "= " + theta.toFixed(2) + "  (≈ " + usd(Math.exp(theta)) + " baseline)";
+    $("pgMLab").textContent = "= " + M;
+
+    if (denom <= 0){                                        // M=0 and no orders
+      $("pgAov").textContent = "—";
+      $("pgAovLog").textContent = "add an order or raise M";
+      $("pgState").innerHTML = "";
+      CELLS.forEach((c, i) => { $("pgp" + i).textContent = "—"; $("pgd" + i).textContent = ""; });
+      return;
+    }
+
+    // E[AOV] = e^thetaHat * ( sum n_cell*A_cell + M*Abar_pop ) / (n_c + M)
+    const aov = Math.exp(thetaHat) * (obsSum + M * AbarPop) / denom;
+    $("pgAov").textContent = usd(aov);
+    $("pgAovLog").textContent = "log E[AOV] = " + Math.log(aov).toFixed(3);
+    $("pgState").innerHTML =
+      "n<sub>c</sub> = <b>" + nc + "</b> orders<br>" +
+      "w = n/(n+K) = <b>" + w.toFixed(2) + "</b><br>" +
+      "&theta;&#770;<sub>c</sub> = <b>" + usd(Math.exp(thetaHat)) + "</b> (log " + thetaHat.toFixed(3) + ")";
+
+    CELLS.forEach((c, i) => {
+      const phat = (counts[i] + M * c.ppop) / denom;        // shrunk mix weight
+      const cellUsd = Math.exp(thetaHat + c.gamma + HALF);  // $ per order in this cell
+      $("pgp" + i).textContent = (phat * 100).toFixed(1) + "%  ·  " + usd(cellUsd);
+      $("pgd" + i).textContent = "log " + (thetaHat + c.gamma + HALF).toFixed(2);
+    });
+  }
+  recompute();
+})();
+</script>
+</body>
+</html>

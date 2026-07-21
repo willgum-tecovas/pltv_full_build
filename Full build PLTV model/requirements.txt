@@ -1,0 +1,9 @@
+# Combined PLTV build — runtime deps.
+# catboost is REQUIRED to unpickle the churn model object inside the .joblib.
+# Match the versions the churn notebook printed at export ("PIN: ...") to avoid
+# pickle/version mismatches when loading the artifact.
+pandas
+numpy
+joblib
+catboost
+scikit-learn

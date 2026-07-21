@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Combined PLTV Scores — Analysis</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  :root{--ink:#2B2B28;--boot:#A94619;--sage:#3A4B38;--slate:#69757C;--tan:#E9A877;--sand:#B6B28B;--bg:#F7F4EF;--card:#fff;}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;line-height:1.5}
+  .wrap{max-width:1080px;margin:0 auto;padding:32px 24px 64px}
+  h1{font-size:26px;margin:0 0 4px}
+  .sub{color:var(--slate);margin:0 0 24px;font-size:14px}
+  .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:26px}
+  .kpi{background:var(--card);border:1px solid #e6e0d6;border-radius:12px;padding:16px}
+  .kpi .v{font-size:24px;font-weight:700;color:var(--sage)}
+  .kpi .l{font-size:12px;color:var(--slate);margin-top:2px}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+  .card{background:var(--card);border:1px solid #e6e0d6;border-radius:12px;padding:18px}
+  .card.full{grid-column:1 / -1}
+  .card h2{font-size:15px;margin:0 0 12px}
+  .note{font-size:12.5px;color:var(--slate);margin-top:10px}
+  canvas{max-height:300px}
+  .flag{background:#fdf1e7;border:1px solid var(--tan);border-radius:12px;padding:14px 16px;margin:22px 0;font-size:13.5px}
+  .flag b{color:var(--boot)}
+  @media(max-width:720px){.kpis{grid-template-columns:repeat(2,1fr)}.grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Combined PLTV Scores — Analysis</h1>
+  <p class="sub">E[future orders] × E[AOV], one row per customer · book generated from <code>pltv_scores.csv</code> (1,993,687 customers)</p>
+
+  <div class="kpis">
+    <div class="kpi"><div class="v">$350.0M</div><div class="l">Total remaining PLTV (scored)</div></div>
+    <div class="kpi"><div class="v">$227</div><div class="l">Median remaining PLTV</div></div>
+    <div class="kpi"><div class="v">1.21M</div><div class="l">Customers with a PLTV</div></div>
+    <div class="kpi"><div class="v">29.8%</div><div class="l">Value in the top decile</div></div>
+  </div>
+
+  <div class="flag">
+    <b>Data caveat:</b> 783,405 customers (39.3%) have no <code>expected_aov</code> and therefore a null PLTV — 82% of them are brand-new <code>order_seq=1</code> customers. The build ran <b>without <code>--fallback-aov</code></b>, so new customers got no population AOV. Re-run with <code>--fallback-aov 310.23</code> to score them. All figures below are on the <b>1.21M scored</b> customers.
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <h2>Distribution of remaining PLTV ($, clipped at p99 ≈ $1,274)</h2>
+      <canvas id="hist"></canvas>
+      <p class="note">Heavily right-skewed: most customers cluster under ~$250, a long tail of high-value loyalists stretches out. Median $227 sits well below the mean, the signature of a concentrated book.</p>
+    </div>
+    <div class="card">
+      <h2>Value concentration by decile (% of total remaining $)</h2>
+      <canvas id="dec"></canvas>
+      <p class="note">The top 10% of customers hold 29.8% of remaining value; the top 30% hold ~57%. Classic Pareto tilt — retention/CRM spend is best aimed at the top deciles.</p>
+    </div>
+    <div class="card">
+      <h2>Mean remaining PLTV by order stage (order_seq)</h2>
+      <canvas id="seq"></canvas>
+      <p class="note">PLTV climbs steeply with each order placed — a 1st-order customer projects ~$181, a 7th-order customer ~$1,275, because repeat probability compounds. The 8+ bucket dips (~$998): it blends many long-tenure stages and the survival tail flattens.</p>
+    </div>
+    <div class="card">
+      <h2>Customers vs. value by risk tier</h2>
+      <canvas id="risk"></canvas>
+      <p class="note">High-churn-risk customers are 35% of the scored base but only 14% of remaining value; Low-risk are 15% of customers yet 36% of value. The score is separating who's worth retaining.</p>
+    </div>
+  </div>
+
+  <div class="card full" style="margin-top:18px">
+    <h2>Read of the book</h2>
+    <p style="font-size:14px;margin:0">
+      Remaining (go-forward) PLTV totals <b>$350M</b> across 1.21M scored customers, and it is highly concentrated: value rises sharply with order stage (loyalty compounds the repeat rate), and the top decile alone carries ~30% of the total. The risk-tier split confirms the score is economically meaningful — Low-risk customers are a small slice of the base but the largest slice of value. The one thing to fix before circulating numbers: the <b>39% of customers with null AOV</b> (mostly first-order) are excluded from every total here, so <b>$350M understates the full book</b> — re-running with a fallback AOV will fold them in and is the single highest-leverage correction.
+    </p>
+  </div>
+</div>
+
+<script>
+window.addEventListener('load', function(){
+  if(typeof Chart==='undefined'){document.querySelectorAll('canvas').forEach(c=>{c.insertAdjacentHTML('afterend','<p class="note">Chart library did not load (offline?). Open with an internet connection.</p>');});return;}
+  const TCV={boot:'#A94619',sage:'#3A4B38',slate:'#69757C',tan:'#E9A877',sand:'#B6B28B'};
+  const histData={counts:[106857,182712,74599,88319,218083,118225,96423,65820,46918,34770,26542,21608,17476,14532,12049,10286,8740,7749,6803,5910,5256,4719,4148,3810,3342,3042,2763,2438,2213,14130],
+   edges:[39.4,80.6,121.7,162.9,204.1,245.2,286.4,327.5,368.7,409.8,451.0,492.2,533.3,574.5,615.6,656.8,698.0,739.1,780.3,821.4,862.6,903.8,944.9,986.1,1027.2,1068.4,1109.5,1150.7,1191.9,1233.0,1274.2]};
+  const seqData={labels:['1','2','3','4','5','6','7','8+'],vals:[181,333.7,515.7,723.2,919.3,1107.7,1274.7,998.4]};
+  const decPct=[2.4,3.2,4.5,6.6,7.6,8.5,9.9,11.8,15.7,29.8];
+  const riskData={tier:['High','Medium','Low'],customers:[426829,604047,179406],value:[48.69,173.60,127.72]};
+  const noGrid={grid:{display:false}};
+
+  new Chart(document.getElementById('hist'),{type:'bar',
+   data:{labels:histData.edges.slice(0,-1).map(e=>'$'+Math.round(e)),
+    datasets:[{data:histData.counts,backgroundColor:TCV.sage,borderRadius:2}]},
+   options:{plugins:{legend:{display:false}},scales:{x:{...noGrid,ticks:{maxTicksLimit:8}},y:{title:{display:true,text:'customers'}}}}});
+
+  new Chart(document.getElementById('dec'),{type:'bar',
+   data:{labels:['1(low)','2','3','4','5','6','7','8','9','10(top)'],
+    datasets:[{data:decPct,backgroundColor:decPct.map((_,i)=>i===9?TCV.boot:TCV.sand),borderRadius:3}]},
+   options:{plugins:{legend:{display:false}},scales:{x:noGrid,y:{title:{display:true,text:'% of total value'}}}}});
+
+  new Chart(document.getElementById('seq'),{type:'line',
+   data:{labels:seqData.labels,
+    datasets:[{data:seqData.vals,borderColor:TCV.boot,backgroundColor:'rgba(169,70,25,.12)',fill:true,tension:.3,pointBackgroundColor:TCV.boot}]},
+   options:{plugins:{legend:{display:false}},scales:{x:{...noGrid,title:{display:true,text:'order_seq'}},y:{title:{display:true,text:'mean remaining PLTV ($)'}}}}});
+
+  new Chart(document.getElementById('risk'),{type:'bar',
+   data:{labels:riskData.tier,
+    datasets:[{label:'% of customers',data:riskData.customers.map(c=>100*c/1210282),backgroundColor:TCV.slate,borderRadius:3},
+              {label:'% of remaining value',data:riskData.value.map(v=>100*v/350.01),backgroundColor:TCV.boot,borderRadius:3}]},
+   options:{plugins:{legend:{position:'bottom'}},scales:{x:noGrid,y:{title:{display:true,text:'%'}}}}});
+});
+</script>
+</body>
+</html>
